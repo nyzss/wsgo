@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	b64 "encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,10 +11,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var WEBSOCKET_MAGIC_GUID string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
 func initLogger() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
+}
+
+func upgradeConnection(clientKey string) string {
+	accept := clientKey + WEBSOCKET_MAGIC_GUID
+	h := sha1.Sum([]byte(accept))
+
+	encoded := b64.StdEncoding.EncodeToString(h[:])
+
+	log.Info().Str("encoded key", encoded).Msg("")
+
+	// HTTP/1.1 101 Switching Protocols
+	// Upgrade: websocket
+	// Connection: Upgrade
+	// Sec-WebSocket-Accept: clientKey + WEBSOCKET_MAGIC_GUID
+
+	return encoded
 }
 
 func main() {
@@ -33,12 +53,12 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 	connection := r.Header.Get("Connection")
 	upgrade := r.Header.Get("Upgrade")
-	key := r.Header.Get("Sec-WebSocket-Key")
+	clientKey := r.Header.Get("Sec-WebSocket-Key")
 	version := r.Header.Get("Sec-WebSocket-Version")
 
 	log.Info().Str("value", connection).Msg("CONNECTION")
 	log.Info().Str("value", upgrade).Msg("UPGRADE")
-	log.Info().Str("value", key).Msg("WEBSOCKET_KEY")
+	log.Info().Str("value", clientKey).Msg("WEBSOCKET_KEY")
 	log.Info().Str("value", version).Msg("WEBSOCKET_VERSION")
 	log.Info().Msg("==== REQUEST DETAILS END ====")
 
@@ -63,6 +83,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		}()
 		log.Info().Msg("client connected successfully")
 		log.Info().Str("address", conn.RemoteAddr().String()).Msg("client address")
+		upgradeConnection(clientKey)
 
 		log.Info().Msg("Writing to client")
 
