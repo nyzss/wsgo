@@ -30,8 +30,6 @@ func main() {
 
 func handleConnection(w http.ResponseWriter, r *http.Request) {
 	log.Info().Msg("==== REQUEST DETAILS START ====")
-	log.Info().Interface("request", r).Msg("REQUEST")
-	log.Info().Msg("---------------")
 
 	connection := r.Header.Get("Connection")
 	upgrade := r.Header.Get("Upgrade")
@@ -59,9 +57,15 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		defer conn.Close()
+		defer func() {
+			log.Info().Str("address", conn.RemoteAddr().String()).Msg("client disconnected")
+			conn.Close()
+		}()
 		log.Info().Msg("client connected successfully")
 		log.Info().Str("address", conn.RemoteAddr().String()).Msg("client address")
+
+		log.Info().Msg("Writing to client")
+
 		bufrw.WriteString("writing from hijacked http server, bbb123\n")
 		bufrw.Flush()
 
@@ -71,6 +75,9 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Msg("error reading string")
 			return
 		}
+
+		log.Info().Str("message", s).Msg("received message from client")
+
 		fmt.Fprintf(bufrw, "You said: %q\nBye.\n", s)
 		bufrw.Flush()
 	} else {
