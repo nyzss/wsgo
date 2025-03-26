@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha1"
 	b64 "encoding/base64"
 	"fmt"
@@ -19,7 +20,7 @@ func initLogger() {
 
 }
 
-func upgradeConnection(clientKey string) string {
+func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 	accept := clientKey + WEBSOCKET_MAGIC_GUID
 	h := sha1.Sum([]byte(accept))
 
@@ -27,12 +28,28 @@ func upgradeConnection(clientKey string) string {
 
 	log.Info().Str("encoded key", encoded).Msg("")
 
+	response := fmt.Sprintf(
+		"HTTP/1.1 101 Switching Protocols\r\n"+
+			"Upgrade: websocket\r\n"+
+			"Connection: Upgrade\r\n"+
+			"Sec-WebSocket-Accept: %s\r\n\r\n",
+		encoded,
+	)
+
+	_, err := bufrw.WriteString(response)
+	if err != nil {
+		return err
+	}
+
+	if err := bufrw.Flush(); err != nil {
+		return err
+	}
+
 	// HTTP/1.1 101 Switching Protocols
 	// Upgrade: websocket
 	// Connection: Upgrade
 	// Sec-WebSocket-Accept: clientKey + WEBSOCKET_MAGIC_GUID
-
-	return encoded
+	return nil
 }
 
 func main() {
@@ -83,7 +100,11 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		}()
 		log.Info().Msg("client connected successfully")
 		log.Info().Str("address", conn.RemoteAddr().String()).Msg("client address")
-		upgradeConnection(clientKey)
+
+		if err := upgradeConnection(bufrw, clientKey); err != nil {
+			log.Error().Err(err).Msg("couldn't upgrade connection")
+			return
+		}
 
 		log.Info().Msg("Writing to client")
 
