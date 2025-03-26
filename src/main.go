@@ -45,10 +45,6 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 		return err
 	}
 
-	// HTTP/1.1 101 Switching Protocols
-	// Upgrade: websocket
-	// Connection: Upgrade
-	// Sec-WebSocket-Accept: clientKey + WEBSOCKET_MAGIC_GUID
 	return nil
 }
 
@@ -106,22 +102,27 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Info().Msg("Writing to client")
-
-		bufrw.WriteString("writing from hijacked http server, bbb123\n")
-		bufrw.Flush()
-
-		s, err := bufrw.ReadString('\n')
+		buffer := make([]byte, 8192)
+		n, err := bufrw.Read(buffer)
 
 		if err != nil {
-			log.Error().Err(err).Msg("error reading string")
+			log.Error().Err(err).Int("bytes", n).Msg("error reading string")
 			return
 		}
 
-		log.Info().Str("message", s).Msg("received message from client")
+		buffer = buffer[:n]
 
-		fmt.Fprintf(bufrw, "You said: %q\nBye.\n", s)
+		log.Info().Interface("message", buffer).Msg("received message from client")
+		fmt.Println("message:", buffer)
+
+		// fmt.Fprintf(bufrw, "You said: %q\nBye.\n", s)
 		bufrw.Flush()
+
+		// log.Info().Msg("Writing to client")
+
+		// bufrw.WriteString("writing from hijacked http server, bbb123\n")
+		// bufrw.Flush()
+
 	} else {
 		log.Warn().Msg("normal http request")
 		// todo: remove after testing hijacking
