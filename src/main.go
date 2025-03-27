@@ -124,7 +124,12 @@ func frameParser(bufrw *bufio.ReadWriter) {
 
 	j := 0
 	for i := range payloadLen {
+		// condition added in case we are at an index bigger than frame buffer (>= 8192 in this case)
+		// doubling size of frame each time to do less read() calls on the socket
+		// (might want to check which is better, more read() calls or smaller buffer size)
 		if len(frame) <= hIndex+j {
+			readSize *= 2
+			log.Info().Int("new_size", readSize).Msg("")
 			frame, err = readChunk(bufrw, readSize)
 			if err != nil {
 				return
