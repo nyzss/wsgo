@@ -6,14 +6,32 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/rs/zerolog/log"
 )
 
 var WEBSOCKET_MAGIC_GUID string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+func cleanup() {
+	log.Info().Msg("cleaning up and exiting..")
+}
+
+func initSig() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		cleanup()
+		os.Exit(1)
+	}()
+}
+
 func main() {
 	initLogger()
+	initSig()
 
 	port := ":8080"
 
@@ -103,11 +121,21 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 			log.Debug().Interface("frame", frame).Str("payload", frame.payload).Msg("Received payload from client")
 
-			data := frameBuilder(frame.payload, OpcodeText)
-			n, err := bufrw.Write(data)
-			if err != nil {
-				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
-				return
+			switch frame.opcode {
+			case OpcodePing:
+				data := frameBuilder(frame.payload, OpcodeText)
+				n, err := bufrw.Write(data)
+				if err != nil {
+					log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
+					return
+				}
+			case OpcodeText:
+				data := frameBuilder("received message well, this is a text from server", OpcodeText)
+				n, err := bufrw.Write(data)
+				if err != nil {
+					log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
+					return
+				}
 			}
 			bufrw.Flush()
 		}

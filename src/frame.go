@@ -29,9 +29,9 @@ const (
 
 type frame struct {
 	fin     byte
-	rsv     byte
 	opcode  Opcode
 	payload string
+	// rsv     byte
 }
 
 func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
