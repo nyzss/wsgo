@@ -60,7 +60,8 @@ func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
 
 // ? parsing frame according to RFC 6455 section 5.2
 func frameParser(bufrw *bufio.ReadWriter) {
-	readSize := 8192 // default reading to 8192
+	readSize := 4096           // default reading and buffer size
+	maxReadSize := 1024 * 1024 // max readsize
 	frame, err := readChunk(bufrw, readSize)
 
 	if err != nil {
@@ -124,11 +125,13 @@ func frameParser(bufrw *bufio.ReadWriter) {
 
 	j := 0
 	for i := range payloadLen {
-		// condition added in case we are at an index bigger than frame buffer (>= 8192 in this case)
+		// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
 		// doubling size of frame each time to do less read() calls on the socket
 		// (might want to check which is better, more read() calls or smaller buffer size)
 		if len(frame) <= hIndex+j {
-			readSize *= 2
+			if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
+				readSize *= 2
+			}
 			log.Info().Int("new_size", readSize).Msg("")
 			frame, err = readChunk(bufrw, readSize)
 			if err != nil {
