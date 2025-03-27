@@ -99,18 +99,6 @@ func frameParser(bufrw *bufio.ReadWriter) {
 		hIndex += 8
 	}
 
-	totalSize := hIndex + int(payloadLen)
-
-	for len(frame) < totalSize {
-		readSize *= 2
-		chunk, err := readChunk(bufrw, readSize)
-		if err != nil {
-			return
-		}
-		frame = append(frame, chunk...)
-		log.Info().Int("readSize", readSize).Msg("")
-	}
-
 	log.Debug().
 		Int("header_size", hIndex).
 		Bool("masked", masked != 0).
@@ -130,10 +118,22 @@ func frameParser(bufrw *bufio.ReadWriter) {
 			Msg("Masking key parsed")
 	}
 
+	// * UNMASKING CLIENT PAYLOAD HERE
+
 	var unmaskedPayload []byte = make([]byte, payloadLen)
 
+	j := 0
 	for i := range payloadLen {
-		unmaskedPayload[int(i)] = frame[hIndex+int(i)] ^ maskingKey[i%4]
+		if len(frame) <= hIndex+j {
+			frame, err = readChunk(bufrw, readSize)
+			if err != nil {
+				return
+			}
+			j = 0
+			hIndex = 0
+		}
+		unmaskedPayload[i] = frame[hIndex+int(j)] ^ maskingKey[i%4]
+		j++
 	}
 
 	log.Debug().Str("payload", string(unmaskedPayload)).Msg("Received payload from client")
