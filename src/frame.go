@@ -27,10 +27,13 @@ const (
 	OpcodePong            Opcode = 10
 )
 
+type StatusCode uint16
+
 type frame struct {
-	fin     byte
-	opcode  Opcode
-	payload string
+	fin        byte
+	opcode     Opcode
+	payload    string
+	statusCode StatusCode
 	// rsv     byte
 }
 
@@ -106,38 +109,57 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 
 	// * UNMASKING CLIENT PAYLOAD HERE
 
+	var statusCode StatusCode
+
+	if opcode == byte(OpcodeConnectionClose) {
+		for i := range 2 {
+			statusCode = (StatusCode(byte(statusCode)) << 8) | StatusCode(chunk[hIndex+i]^maskingKey[i%4])
+		}
+		hIndex += 2
+	}
+
+	log.Debug().
+		Int("status_code", int(statusCode)).
+		Int("opcode", int(opcode)).
+		Int("payload_len", int(payloadLen)).
+		Msg("Connection close frame received")
+
 	var unmaskedPayload []byte = make([]byte, payloadLen)
 
 	j := 0
 	log.Debug().Int("header_size", hIndex).Msg("")
-	for i := range payloadLen {
-		// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
-		// doubling size of frame each time to do less read() calls on the socket
-		// (might want to check which is better, more read() calls or smaller buffer size)
-		if len(chunk) <= hIndex+j {
-			if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
-				readSize *= 2
+	isClose := opcode == byte(OpcodeConnectionClose)
+	if (isClose && payloadLen > 2) || (!isClose && payloadLen > 0) {
+		for i := range payloadLen {
+			// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
+			// doubling size of frame each time to do less read() calls on the socket
+			// (might want to check which is better, more read() calls or smaller buffer size)
+			if len(chunk) <= hIndex+j {
+				if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
+					readSize *= 2
+				}
+				log.Debug().Int("old_size", readSize/2).Int("new_size", readSize).Msg("doubling size of read()")
+				chunk, err = readChunk(bufrw, readSize)
+				if err != nil {
+					return frame{}, err
+				}
+				j = 0
+				hIndex = 0
 			}
-			log.Debug().Int("old_size", readSize/2).Int("new_size", readSize).Msg("doubling size of read()")
-			chunk, err = readChunk(bufrw, readSize)
-			if err != nil {
-				return frame{}, err
-			}
-			j = 0
-			hIndex = 0
+			unmaskedPayload[i] = chunk[hIndex+int(j)] ^ maskingKey[i%4]
+			j++
 		}
-		unmaskedPayload[i] = chunk[hIndex+int(j)] ^ maskingKey[i%4]
-		j++
 	}
 
 	return frame{
-		fin:     fin,
-		opcode:  Opcode(opcode),
-		payload: string(unmaskedPayload),
+		fin:        fin,
+		opcode:     Opcode(opcode),
+		payload:    string(unmaskedPayload),
+		statusCode: statusCode,
 	}, nil
 }
 
-func frameBuilder(payload string, opcode Opcode) []byte {
+func frameBuilder(payload string, opcode Opcode, statusCode uint16) []byte {
 
 	l := len(payload)
 	var numBytes int
@@ -166,6 +188,14 @@ func frameBuilder(payload string, opcode Opcode) []byte {
 		}
 
 		hIndex += numBytes
+	}
+
+	if opcode == OpcodeConnectionClose {
+		for i := 1; i >= 0; i-- {
+			buffer[hIndex+i] = byte(statusCode & 0xFF)
+			statusCode >>= 8
+		}
+		hIndex += 2
 	}
 
 	for i := range payload {
