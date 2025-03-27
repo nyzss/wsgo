@@ -94,8 +94,23 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		frameParser(bufrw)
-		bufrw.Flush()
+		for {
+			str, err := frameParser(bufrw)
+			if err != nil {
+				log.Error().Err(err).Msg("couldn't parse frame")
+				return
+			}
+
+			log.Debug().Str("payload", str).Msg("Received payload from client")
+
+			data := frameBuilder(str)
+			n, err := bufrw.Write(data)
+			if err != nil {
+				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
+				return
+			}
+			bufrw.Flush()
+		}
 	} else {
 		log.Warn().Msg("normal http request")
 		// todo: remove after testing hijacking
