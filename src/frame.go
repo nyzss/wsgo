@@ -6,6 +6,25 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// *  %x0 denotes a continuation frame
+// *  %x1 denotes a text frame
+// *  %x2 denotes a binary frame
+// *  %x3-7 are reserved for further non-control frames
+// *  %x8 denotes a connection close
+// *  %x9 denotes a ping
+// *  %xA denotes a pong
+// *  %xB-F are reserved for further control frames
+type Opcode byte
+
+const (
+	OpcodeContinuation    Opcode = 0
+	OpcodeText            Opcode = 1
+	OopcodeBinary         Opcode = 2
+	OpcodeConnectionClose Opcode = 8
+	OpcodePing            Opcode = 9
+	OpcodePong            Opcode = 10
+)
+
 func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
 	frame := make([]byte, n)
 	b, err := bufrw.Read(frame)
@@ -105,7 +124,7 @@ func frameParser(bufrw *bufio.ReadWriter) (string, error) {
 	return string(unmaskedPayload), nil
 }
 
-func frameBuilder(payload string) []byte {
+func frameBuilder(payload string, opcode Opcode) []byte {
 
 	l := len(payload)
 	var numBytes int
@@ -119,7 +138,7 @@ func frameBuilder(payload string) []byte {
 	buffer := make([]byte, 2+numBytes+l)
 	var hIndex int
 
-	buffer[hIndex] = 0x81 // 129
+	buffer[hIndex] = 0x80 + byte(opcode) // 128 + opcode
 	hIndex++
 
 	if l <= 125 {

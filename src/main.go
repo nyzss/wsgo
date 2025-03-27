@@ -103,7 +103,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 			log.Debug().Str("payload", str).Msg("Received payload from client")
 
-			data := frameBuilder(str)
+			data := frameBuilder(str, OpcodeText)
 			n, err := bufrw.Write(data)
 			if err != nil {
 				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
