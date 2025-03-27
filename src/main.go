@@ -88,20 +88,28 @@ func frameParser(frame []byte) {
 		Int64("payload_length", payloadLen).
 		Msg("Frame header parsed")
 
-	var maskingKey int32
+	var maskingKey [4]byte
 
 	// TODO: if masked is 0 then we should return an error (rfc 6455 section 5.1)
 	if masked != 0 {
 		for i := range 4 {
-			maskingKey = (maskingKey << 8) | int32(frame[hIndex+i])
+			maskingKey[i] = frame[hIndex+i]
+			// maskingKey = (maskingKey << 8) | int32(frame[hIndex+i])
 		}
 		hIndex += 4
 		log.Debug().
-			Hex("masking_key", []byte{byte(maskingKey >> 24), byte(maskingKey >> 16), byte(maskingKey >> 8), byte(maskingKey)}).
-			Int32("raw_masking_key", maskingKey).
+			Hex("masking_key", maskingKey[:]).
 			Msg("Masking key parsed")
 	}
 
+	var unmaskedPayload []byte = make([]byte, payloadLen)
+
+	for i := range payloadLen {
+		// unmaskedPayload[int(i)] = 1
+		unmaskedPayload[int(i)] = frame[hIndex+int(i)] ^ maskingKey[i%4]
+	}
+
+	log.Debug().Str("payload", string(unmaskedPayload)).Msg("Received payload from client")
 }
 
 func main() {
