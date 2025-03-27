@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha1"
 	b64 "encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -46,6 +47,61 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 	}
 
 	return nil
+}
+
+// ? parsing frame according to RFC 6455 section 5.2
+func frameParser(frame []byte) {
+	hIndex := 0                  // header index / header size
+	fin := frame[hIndex] & 128   // 0x80
+	rsv := frame[hIndex] & 112   // 0x70
+	opcode := frame[hIndex] & 15 // 0x0F
+
+	log.Debug().
+		Int("header_index", hIndex).
+		Bool("fin", fin != 0).
+		Int("rsv", int(rsv)).
+		Int("opcode", int(opcode)).
+		Msg("Frame header first byte parsed")
+
+	hIndex++
+	masked := frame[hIndex] & 128
+
+	var payloadLen int64
+
+	payloadLenBase := frame[hIndex] & 127
+	hIndex++
+	if payloadLenBase <= 125 {
+		payloadLen = int64(payloadLenBase)
+	} else if payloadLenBase == 126 {
+		payloadLen = int64((int(frame[hIndex]) << 8) | int(frame[hIndex+1]))
+		hIndex += 2
+	} else if payloadLenBase == 127 {
+		for i := range 8 {
+			payloadLen = (payloadLen << 8) | int64(frame[hIndex+i])
+		}
+		hIndex += 8
+	}
+
+	log.Debug().
+		Int("header_size", hIndex).
+		Bool("masked", masked != 0).
+		Int64("payload_length", payloadLen).
+		Msg("Frame header parsed")
+
+	var maskingKey int32
+
+	// TODO: if masked is 0 then we should return an error (rfc 6455 section 5.1)
+	if masked != 0 {
+		for i := range 4 {
+			maskingKey = (maskingKey << 8) | int32(frame[hIndex+i])
+		}
+		hIndex += 4
+		log.Debug().
+			Hex("masking_key", []byte{byte(maskingKey >> 24), byte(maskingKey >> 16), byte(maskingKey >> 8), byte(maskingKey)}).
+			Int32("raw_masking_key", maskingKey).
+			Msg("Masking key parsed")
+	}
+
 }
 
 func main() {
@@ -104,20 +160,20 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 		buffer := make([]byte, 8192)
 		n, err := bufrw.Read(buffer)
-
 		if err != nil {
 			log.Error().Err(err).Int("bytes", n).Msg("error reading string")
 			return
 		}
-
 		buffer = buffer[:n]
 
 		log.Info().Interface("message", buffer).Msg("received message from client")
-		fmt.Println("message:", buffer)
+		fmt.Println("message:", hex.EncodeToString(buffer))
 
-		// fmt.Fprintf(bufrw, "You said: %q\nBye.\n", s)
+		frameParser(buffer)
+
 		bufrw.Flush()
 
+		// fmt.Fprintf(bufrw, "You said: %q\nBye.\n", s)
 		// log.Info().Msg("Writing to client")
 
 		// bufrw.WriteString("writing from hijacked http server, bbb123\n")
@@ -137,3 +193,5 @@ Connection: upgrade
 Upgrade: websocket
 
 */
+
+// 81 fe 08 c0 9f 30 96 20 e8
