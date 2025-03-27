@@ -6,14 +6,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// *  %x0 denotes a continuation frame
-// *  %x1 denotes a text frame
-// *  %x2 denotes a binary frame
-// *  %x3-7 are reserved for further non-control frames
-// *  %x8 denotes a connection close
-// *  %x9 denotes a ping
-// *  %xA denotes a pong
-// *  %xB-F are reserved for further control frames
+/*
+ *  %x0 denotes a continuation frame
+ *  %x1 denotes a text frame
+ *  %x2 denotes a binary frame
+ *  %x3-7 are reserved for further non-control frames
+ *  %x8 denotes a connection close
+ *  %x9 denotes a ping
+ *  %xA denotes a pong
+ *  %xB-F are reserved for further control frames
+ */
 type Opcode byte
 
 const (
@@ -24,6 +26,13 @@ const (
 	OpcodePing            Opcode = 9
 	OpcodePong            Opcode = 10
 )
+
+type frame struct {
+	fin     byte
+	rsv     byte
+	opcode  Opcode
+	payload string
+}
 
 func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
 	frame := make([]byte, n)
@@ -36,19 +45,19 @@ func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
 }
 
 // ? parsing frame according to RFC 6455 section 5.2
-func frameParser(bufrw *bufio.ReadWriter) (string, error) {
+func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	readSize := 4096           // default reading and buffer size
 	maxReadSize := 1024 * 1024 // max readsize
-	frame, err := readChunk(bufrw, readSize)
+	chunk, err := readChunk(bufrw, readSize)
 
 	if err != nil {
-		return "", err
+		return frame{}, err
 	}
 
 	hIndex := 0                  // header index / header size
-	fin := frame[hIndex] & 128   // 0x80
-	rsv := frame[hIndex] & 112   // 0x70
-	opcode := frame[hIndex] & 15 // 0x0F
+	fin := chunk[hIndex] & 128   // 0x80
+	rsv := chunk[hIndex] & 112   // 0x70
+	opcode := chunk[hIndex] & 15 // 0x0F
 
 	log.Debug().
 		Int("header_index", hIndex).
@@ -58,20 +67,20 @@ func frameParser(bufrw *bufio.ReadWriter) (string, error) {
 		Msg("Frame header first byte parsed")
 
 	hIndex++
-	masked := frame[hIndex] & 128
+	masked := chunk[hIndex] & 128
 
 	var payloadLen int64
 
-	payloadLenBase := frame[hIndex] & 127
+	payloadLenBase := chunk[hIndex] & 127
 	hIndex++
 	if payloadLenBase <= 125 {
 		payloadLen = int64(payloadLenBase)
 	} else if payloadLenBase == 126 {
-		payloadLen = int64((int(frame[hIndex]) << 8) | int(frame[hIndex+1]))
+		payloadLen = int64((int(chunk[hIndex]) << 8) | int(chunk[hIndex+1]))
 		hIndex += 2
 	} else if payloadLenBase == 127 {
 		for i := range 8 {
-			payloadLen = (payloadLen << 8) | int64(frame[hIndex+i])
+			payloadLen = (payloadLen << 8) | int64(chunk[hIndex+i])
 		}
 		hIndex += 8
 	}
@@ -87,7 +96,7 @@ func frameParser(bufrw *bufio.ReadWriter) (string, error) {
 	// TODO: if masked is 0 then we should return an error (rfc 6455 section 5.1)
 	if masked != 0 {
 		for i := range 4 {
-			maskingKey[i] = frame[hIndex+i]
+			maskingKey[i] = chunk[hIndex+i]
 		}
 		hIndex += 4
 		log.Debug().
@@ -105,23 +114,27 @@ func frameParser(bufrw *bufio.ReadWriter) (string, error) {
 		// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
 		// doubling size of frame each time to do less read() calls on the socket
 		// (might want to check which is better, more read() calls or smaller buffer size)
-		if len(frame) <= hIndex+j {
+		if len(chunk) <= hIndex+j {
 			if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
 				readSize *= 2
 			}
 			log.Debug().Int("old_size", readSize/2).Int("new_size", readSize).Msg("doubling size of read()")
-			frame, err = readChunk(bufrw, readSize)
+			chunk, err = readChunk(bufrw, readSize)
 			if err != nil {
-				return "", err
+				return frame{}, err
 			}
 			j = 0
 			hIndex = 0
 		}
-		unmaskedPayload[i] = frame[hIndex+int(j)] ^ maskingKey[i%4]
+		unmaskedPayload[i] = chunk[hIndex+int(j)] ^ maskingKey[i%4]
 		j++
 	}
 
-	return string(unmaskedPayload), nil
+	return frame{
+		fin:     fin,
+		opcode:  Opcode(opcode),
+		payload: string(unmaskedPayload),
+	}, nil
 }
 
 func frameBuilder(payload string, opcode Opcode) []byte {
