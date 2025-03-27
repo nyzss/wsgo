@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/sha1"
 	b64 "encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -49,8 +48,26 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 	return nil
 }
 
+func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
+	frame := make([]byte, n)
+	b, err := bufrw.Read(frame)
+	if err != nil {
+		return nil, err
+	}
+	frame = frame[:b]
+	return frame, nil
+}
+
 // ? parsing frame according to RFC 6455 section 5.2
-func frameParser(frame []byte) {
+func frameParser(bufrw *bufio.ReadWriter) {
+	readSize := 8192 // default reading to 8192
+	frame, err := readChunk(bufrw, readSize)
+
+	if err != nil {
+		log.Error().Err(err).Msg("error reading string")
+		return
+	}
+
 	hIndex := 0                  // header index / header size
 	fin := frame[hIndex] & 128   // 0x80
 	rsv := frame[hIndex] & 112   // 0x70
@@ -82,6 +99,18 @@ func frameParser(frame []byte) {
 		hIndex += 8
 	}
 
+	totalSize := hIndex + int(payloadLen)
+
+	for len(frame) < totalSize {
+		readSize *= 2
+		chunk, err := readChunk(bufrw, readSize)
+		if err != nil {
+			return
+		}
+		frame = append(frame, chunk...)
+		log.Info().Int("readSize", readSize).Msg("")
+	}
+
 	log.Debug().
 		Int("header_size", hIndex).
 		Bool("masked", masked != 0).
@@ -94,7 +123,6 @@ func frameParser(frame []byte) {
 	if masked != 0 {
 		for i := range 4 {
 			maskingKey[i] = frame[hIndex+i]
-			// maskingKey = (maskingKey << 8) | int32(frame[hIndex+i])
 		}
 		hIndex += 4
 		log.Debug().
@@ -105,7 +133,6 @@ func frameParser(frame []byte) {
 	var unmaskedPayload []byte = make([]byte, payloadLen)
 
 	for i := range payloadLen {
-		// unmaskedPayload[int(i)] = 1
 		unmaskedPayload[int(i)] = frame[hIndex+int(i)] ^ maskingKey[i%4]
 	}
 
@@ -166,18 +193,11 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		buffer := make([]byte, 8192)
-		n, err := bufrw.Read(buffer)
-		if err != nil {
-			log.Error().Err(err).Int("bytes", n).Msg("error reading string")
-			return
-		}
-		buffer = buffer[:n]
+		frameParser(bufrw)
+		// frameParser(buffer)
 
-		log.Info().Interface("message", buffer).Msg("received message from client")
-		fmt.Println("message:", hex.EncodeToString(buffer))
-
-		frameParser(buffer)
+		// log.Info().Interface("message", buffer).Msg("received message from client")
+		// fmt.Println("message:", hex.EncodeToString(buffer))
 
 		bufrw.Flush()
 
