@@ -49,7 +49,7 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 
 	encoded := b64.StdEncoding.EncodeToString(h[:])
 
-	log.Info().Str("encoded key", encoded).Msg("")
+	log.Debug().Str("encoded key", encoded).Msg("")
 
 	response := fmt.Sprintf(
 		"HTTP/1.1 101 Switching Protocols\r\n"+
@@ -72,21 +72,17 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 }
 
 func handleConnection(w http.ResponseWriter, r *http.Request) {
-	log.Info().Msg("==== REQUEST DETAILS START ====")
-
 	connection := r.Header.Get("Connection")
 	upgrade := r.Header.Get("Upgrade")
 	clientKey := r.Header.Get("Sec-WebSocket-Key")
 	version := r.Header.Get("Sec-WebSocket-Version")
 
-	log.Info().Str("value", connection).Msg("CONNECTION")
-	log.Info().Str("value", upgrade).Msg("UPGRADE")
-	log.Info().Str("value", clientKey).Msg("WEBSOCKET_KEY")
-	log.Info().Str("value", version).Msg("WEBSOCKET_VERSION")
-	log.Info().Msg("==== REQUEST DETAILS END ====")
+	log.Info().Str("connection", connection).Str("upgrade", upgrade).Msg("")
+	log.Info().Str("websocket_version", version).Str("websocket_key", clientKey).Msg("")
 
 	// todo: setting as true for now to test hijacking, remove later on
 	if true || connection == "Upgrade" && upgrade == "websocket" {
+
 		hj, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "fatal: websocket doesn't support hijacking", http.StatusInternalServerError)
@@ -94,7 +90,6 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		}
 
 		conn, bufrw, err := hj.Hijack()
-
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -104,6 +99,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			log.Info().Str("address", conn.RemoteAddr().String()).Msg("client disconnected")
 			conn.Close()
 		}()
+
 		log.Info().Msg("client connected successfully")
 		log.Info().Str("address", conn.RemoteAddr().String()).Msg("client address")
 
@@ -112,41 +108,8 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		for {
-			frame, err := frameParser(bufrw)
-			if err != nil {
-				log.Error().Err(err).Msg("couldn't parse frame")
-				return
-			}
+		readLoop(bufrw)
 
-			log.Debug().Interface("frame", frame).Str("payload", frame.payload).Msg("Received payload from client")
-
-			switch frame.opcode {
-			case OpcodePing:
-				data := frameBuilder(frame.payload, OpcodeText, 0)
-				n, err := bufrw.Write(data)
-				if err != nil {
-					log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
-					return
-				}
-			case OpcodeText:
-				data := frameBuilder("received message well, this is a text from server", OpcodeText, 0)
-				n, err := bufrw.Write(data)
-				if err != nil {
-					log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
-					return
-				}
-			case OpcodeConnectionClose:
-				data := frameBuilder(frame.payload, OpcodeConnectionClose, uint16(frame.statusCode))
-				n, err := bufrw.Write(data)
-				if err != nil {
-					log.Error().Err(err).Int("bytes_written", n).Msg("couldn't close connection")
-				}
-				bufrw.Flush()
-				return
-			}
-			bufrw.Flush()
-		}
 	} else {
 		log.Warn().Msg("normal http request")
 		// todo: remove after testing hijacking

@@ -62,13 +62,6 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	rsv := chunk[hIndex] & 112   // 0x70
 	opcode := chunk[hIndex] & 15 // 0x0F
 
-	log.Debug().
-		Int("header_index", hIndex).
-		Bool("fin", fin != 0).
-		Int("rsv", int(rsv)).
-		Int("opcode", int(opcode)).
-		Msg("Frame header first byte parsed")
-
 	hIndex++
 	masked := chunk[hIndex] & 128
 
@@ -90,6 +83,9 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 
 	log.Debug().
 		Int("header_size", hIndex).
+		Bool("fin", fin != 0).
+		Int("rsv", int(rsv)).
+		Int("opcode", int(opcode)).
 		Bool("masked", masked != 0).
 		Int64("payload_length", payloadLen).
 		Msg("Frame header parsed")
@@ -104,6 +100,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 		hIndex += 4
 		log.Debug().
 			Hex("masking_key", maskingKey[:]).
+			Int("header_size", hIndex).
 			Msg("Masking key parsed")
 	}
 
@@ -116,18 +113,15 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 			statusCode = (StatusCode(byte(statusCode)) << 8) | StatusCode(chunk[hIndex+i]^maskingKey[i%4])
 		}
 		hIndex += 2
+		log.Debug().
+			Int("status_code", int(statusCode)).
+			Int("header_size", hIndex).
+			Msg("Connection close frame status code parsed")
 	}
-
-	log.Debug().
-		Int("status_code", int(statusCode)).
-		Int("opcode", int(opcode)).
-		Int("payload_len", int(payloadLen)).
-		Msg("Connection close frame received")
 
 	var unmaskedPayload []byte = make([]byte, payloadLen)
 
 	j := 0
-	log.Debug().Int("header_size", hIndex).Msg("")
 	isClose := opcode == byte(OpcodeConnectionClose)
 	if (isClose && payloadLen > 2) || (!isClose && payloadLen > 0) {
 		for i := range payloadLen {
@@ -138,7 +132,11 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 				if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
 					readSize *= 2
 				}
-				log.Debug().Int("old_size", readSize/2).Int("new_size", readSize).Msg("doubling size of read()")
+				log.Debug().
+					Int("old_size", readSize/2).
+					Int("new_size", readSize).
+					Int("max_size", maxReadSize).
+					Msg("Increasing read buffer size")
 				chunk, err = readChunk(bufrw, readSize)
 				if err != nil {
 					return frame{}, err
