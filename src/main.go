@@ -108,7 +108,10 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		readLoop(bufrw)
+		frameChan := make(chan frame)
+
+		go writeLoop(bufrw, frameChan)
+		readLoop(bufrw, frameChan)
 
 	} else {
 		log.Warn().Msg("normal http request")

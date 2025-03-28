@@ -157,9 +157,9 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	}, nil
 }
 
-func frameBuilder(payload string, opcode Opcode, statusCode uint16) []byte {
+func frameBuilder(fr frame) []byte {
 
-	l := len(payload)
+	l := len(fr.payload)
 	var numBytes int
 	if l <= 65535 {
 		numBytes = 2
@@ -171,7 +171,7 @@ func frameBuilder(payload string, opcode Opcode, statusCode uint16) []byte {
 	buffer := make([]byte, 2+numBytes+l)
 	var hIndex int
 
-	buffer[hIndex] = 0x80 + byte(opcode) // 128 + opcode
+	buffer[hIndex] = 0x80 + byte(fr.opcode) // 128 + opcode
 	hIndex++
 
 	if l <= 125 {
@@ -188,7 +188,8 @@ func frameBuilder(payload string, opcode Opcode, statusCode uint16) []byte {
 		hIndex += numBytes
 	}
 
-	if opcode == OpcodeConnectionClose {
+	statusCode := fr.statusCode
+	if fr.opcode == OpcodeConnectionClose {
 		for i := 1; i >= 0; i-- {
 			buffer[hIndex+i] = byte(statusCode & 0xFF)
 			statusCode >>= 8
@@ -196,8 +197,8 @@ func frameBuilder(payload string, opcode Opcode, statusCode uint16) []byte {
 		hIndex += 2
 	}
 
-	for i := range payload {
-		buffer[hIndex+i] = payload[i]
+	for i := range fr.payload {
+		buffer[hIndex+i] = fr.payload[i]
 	}
 
 	return buffer

@@ -6,40 +6,37 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func readLoop(bufrw *bufio.ReadWriter) {
+func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame) {
 	for {
-		frame, err := frameParser(bufrw)
+		fr, err := frameParser(bufrw)
 		if err != nil {
 			log.Error().Err(err).Msg("couldn't parse frame")
 			return
 		}
 
-		log.Debug().Interface("frame", frame).Str("payload", frame.payload).Msg("Received payload from client")
+		log.Debug().Interface("frame", fr).Str("payload", fr.payload).Msg("Received payload from client")
 
-		switch frame.opcode {
+		switch fr.opcode {
 		case OpcodePing:
-			data := frameBuilder(frame.payload, OpcodeText, 0)
-			n, err := bufrw.Write(data)
-			if err != nil {
-				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
-				return
+			payload := frame{
+				payload: fr.payload,
+				opcode:  OpcodeText,
 			}
+			frameChan <- payload
 		case OpcodeText:
-			data := frameBuilder("received message well, this is a text from server", OpcodeText, 0)
-			n, err := bufrw.Write(data)
-			if err != nil {
-				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't write to client")
-				return
+			payload := frame{
+				payload: "received message well, this is a text from server",
+				opcode:  OpcodeText,
 			}
+			frameChan <- payload
 		case OpcodeConnectionClose:
-			data := frameBuilder(frame.payload, OpcodeConnectionClose, uint16(frame.statusCode))
-			n, err := bufrw.Write(data)
-			if err != nil {
-				log.Error().Err(err).Int("bytes_written", n).Msg("couldn't close connection")
+			payload := frame{
+				payload:    fr.payload,
+				opcode:     OpcodeConnectionClose,
+				statusCode: fr.statusCode,
 			}
-			bufrw.Flush()
+			frameChan <- payload
 			return
 		}
-		bufrw.Flush()
 	}
 }
