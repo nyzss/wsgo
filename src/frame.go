@@ -110,9 +110,9 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 
 	var statusCode StatusCode
 
-	if opcode == byte(OpcodeConnectionClose) {
+	if opcode == byte(OpcodeConnectionClose) && len(chunk) >= hIndex+2 {
 		for i := range 2 {
-			statusCode = (StatusCode(byte(statusCode)) << 8) | StatusCode(chunk[hIndex+i]^maskingKey[i%4])
+			statusCode = (StatusCode(statusCode) << 8) | StatusCode(chunk[hIndex+i]^maskingKey[i%4])
 		}
 		hIndex += 2
 		log.Debug().
