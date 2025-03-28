@@ -1,0 +1,11 @@
+{
+    "servers": [
+        {
+            "url": "ws://host.docker.internal:8080",
+            "agent": "wsgo fuzzing client"
+        }
+    ],
+    "outdir": "./reports/servers",
+    "cases": ["*"],
+    "exclude-cases": ["9.*", "12.*", "13.*"]
+}
