@@ -15,6 +15,8 @@ import (
 
 var WEBSOCKET_MAGIC_GUID string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+var debug bool = true
+
 func cleanup() {
 	log.Info().Msg("cleaning up and exiting..")
 }
@@ -111,6 +113,12 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		frameChan := make(chan frame)
 
 		go writeLoop(bufrw, frameChan)
+
+		frameChan <- frame{
+			payload: "hello world!",
+			opcode:  OpcodeText,
+		}
+
 		readLoop(bufrw, frameChan)
 
 	} else {

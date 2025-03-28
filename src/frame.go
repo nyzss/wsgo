@@ -30,10 +30,11 @@ const (
 type StatusCode uint16
 
 type frame struct {
-	fin        byte
-	opcode     Opcode
-	payload    string
-	statusCode StatusCode
+	fin          byte
+	opcode       Opcode
+	payload      string
+	statusCode   StatusCode
+	headerLength byte
 	// rsv     byte
 }
 
@@ -54,6 +55,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	chunk, err := readChunk(bufrw, readSize)
 
 	if err != nil {
+		log.Error().Msg("initial read failed")
 		return frame{}, err
 	}
 
@@ -124,11 +126,12 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	j := 0
 	isClose := opcode == byte(OpcodeConnectionClose)
 	if (isClose && payloadLen > 2) || (!isClose && payloadLen > 0) {
+		h := hIndex
 		for i := range payloadLen {
 			// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
 			// doubling size of frame each time to do less read() calls on the socket
 			// (might want to check which is better, more read() calls or smaller buffer size)
-			if len(chunk) <= hIndex+j {
+			if len(chunk) <= h+j {
 				if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
 					readSize *= 2
 				}
@@ -139,36 +142,44 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 					Msg("Increasing read buffer size")
 				chunk, err = readChunk(bufrw, readSize)
 				if err != nil {
+					log.Error().Msg("loop read failed")
 					return frame{}, err
 				}
 				j = 0
-				hIndex = 0
+				h = 0
 			}
-			unmaskedPayload[i] = chunk[hIndex+int(j)] ^ maskingKey[i%4]
+			unmaskedPayload[i] = chunk[h+int(j)] ^ maskingKey[i%4]
 			j++
 		}
 	}
 
 	return frame{
-		fin:        fin,
-		opcode:     Opcode(opcode),
-		payload:    string(unmaskedPayload),
-		statusCode: statusCode,
+		fin:          fin,
+		opcode:       Opcode(opcode),
+		payload:      string(unmaskedPayload),
+		statusCode:   statusCode,
+		headerLength: byte(hIndex),
 	}, nil
 }
 
+// * rfc-6455 section 5.2 (https://datatracker.ietf.org/doc/html/rfc6455#section-5.2)
 func frameBuilder(fr frame) []byte {
-
 	l := len(fr.payload)
 	var numBytes int
-	if l <= 65535 {
+	// payload len 125, 126 or 127
+	if l > 125 && l <= 65535 {
 		numBytes = 2
-	} else {
+	} else if l > 65535 {
 		numBytes = 8
 	}
 
+	headerSize := 2 + numBytes
+	if fr.opcode == OpcodeConnectionClose {
+		headerSize += 2
+	}
+
 	// allocating for size of first 2 headers + extra payload length header(optional) + payload length
-	buffer := make([]byte, 2+numBytes+l)
+	buffer := make([]byte, headerSize+l)
 	var hIndex int
 
 	buffer[hIndex] = 0x80 + byte(fr.opcode) // 128 + opcode
@@ -178,6 +189,11 @@ func frameBuilder(fr frame) []byte {
 		buffer[hIndex] = byte(l)
 		hIndex++
 	} else {
+		if numBytes == 2 {
+			buffer[hIndex] = 126
+		} else {
+			buffer[hIndex] = 127
+		}
 		hIndex++
 
 		for i := numBytes - 1; i >= 0; i-- {
@@ -188,8 +204,9 @@ func frameBuilder(fr frame) []byte {
 		hIndex += numBytes
 	}
 
-	statusCode := fr.statusCode
+	// adding status code before setting payload
 	if fr.opcode == OpcodeConnectionClose {
+		statusCode := fr.statusCode
 		for i := 1; i >= 0; i-- {
 			buffer[hIndex+i] = byte(statusCode & 0xFF)
 			statusCode >>= 8
@@ -197,6 +214,7 @@ func frameBuilder(fr frame) []byte {
 		hIndex += 2
 	}
 
+	// adding payload to buffer
 	for i := range fr.payload {
 		buffer[hIndex+i] = fr.payload[i]
 	}
