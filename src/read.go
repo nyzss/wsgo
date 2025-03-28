@@ -18,24 +18,21 @@ func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame) {
 
 		switch fr.opcode {
 		case OpcodePing:
-			payload := frame{
+			frameChan <- frame{
 				payload: fr.payload,
 				opcode:  OpcodeText,
 			}
-			frameChan <- payload
 		case OpcodeText:
-			payload := frame{
+			frameChan <- frame{
 				payload: "received message well, this is a text from server",
 				opcode:  OpcodeText,
 			}
-			frameChan <- payload
 		case OpcodeConnectionClose:
-			payload := frame{
+			frameChan <- frame{
 				payload:    fr.payload,
 				opcode:     OpcodeConnectionClose,
 				statusCode: fr.statusCode,
 			}
-			frameChan <- payload
 			return
 		}
 	}

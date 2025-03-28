@@ -221,3 +221,87 @@ func frameBuilder(fr frame) []byte {
 
 	return buffer
 }
+
+// mostly for debugging, or when you know you have the whole header + payload
+func simpleFrameParser(buffer []byte) (frame, error) {
+	hIndex := 0                   // header index / header size
+	fin := buffer[hIndex] & 128   // 0x80
+	rsv := buffer[hIndex] & 112   // 0x70
+	opcode := buffer[hIndex] & 15 // 0x0F
+
+	hIndex++
+	masked := buffer[hIndex] & 128
+
+	var payloadLen int64
+
+	payloadLenBase := buffer[hIndex] & 127
+	hIndex++
+	if payloadLenBase <= 125 {
+		payloadLen = int64(payloadLenBase)
+	} else if payloadLenBase == 126 {
+		payloadLen = int64((int(buffer[hIndex]) << 8) | int(buffer[hIndex+1]))
+		hIndex += 2
+	} else if payloadLenBase == 127 {
+		for i := range 8 {
+			payloadLen = (payloadLen << 8) | int64(buffer[hIndex+i])
+		}
+		hIndex += 8
+	}
+
+	log.Debug().
+		Int("header_size", hIndex).
+		Bool("fin", fin != 0).
+		Int("rsv", int(rsv)).
+		Int("opcode", int(opcode)).
+		Bool("masked", masked != 0).
+		Int64("payload_length", payloadLen).
+		Msg("Frame header parsed")
+
+	var maskingKey [4]byte
+
+	// TODO: if masked is 0 then we should return an error (rfc 6455 section 5.1)
+	if masked != 0 {
+		for i := range 4 {
+			maskingKey[i] = buffer[hIndex+i]
+		}
+		hIndex += 4
+		log.Debug().
+			Hex("masking_key", maskingKey[:]).
+			Int("header_size", hIndex).
+			Msg("Masking key parsed")
+	}
+
+	// * UNMASKING CLIENT PAYLOAD HERE
+
+	var statusCode StatusCode
+
+	if opcode == byte(OpcodeConnectionClose) {
+		for i := range 2 {
+			statusCode = (StatusCode(byte(statusCode)) << 8) | StatusCode(buffer[hIndex+i]^maskingKey[i%4])
+		}
+		hIndex += 2
+		log.Debug().
+			Int("status_code", int(statusCode)).
+			Int("header_size", hIndex).
+			Msg("Connection close frame status code parsed")
+	}
+
+	var unmaskedPayload []byte = make([]byte, payloadLen)
+
+	j := 0
+	isClose := opcode == byte(OpcodeConnectionClose)
+	if (isClose && payloadLen > 2) || (!isClose && payloadLen > 0) {
+		for i := range payloadLen {
+			unmaskedPayload[i] = buffer[hIndex+int(j)] ^ maskingKey[i%4]
+			j++
+		}
+	}
+
+	return frame{
+		fin:          fin,
+		opcode:       Opcode(opcode),
+		payload:      string(unmaskedPayload),
+		statusCode:   statusCode,
+		headerLength: byte(hIndex),
+	}, nil
+}
