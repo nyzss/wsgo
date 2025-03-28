@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
 
-func writeLoop(bufrw *bufio.ReadWriter, frameChan chan frame) {
-	for {
-		received := <-frameChan
+func writeLoop(bufrw *bufio.ReadWriter, frameChan chan frame, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	for received := range frameChan {
 
 		data := frameBuilder(received)
 

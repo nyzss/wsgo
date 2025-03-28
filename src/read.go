@@ -7,15 +7,15 @@ import (
 )
 
 func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame) {
+	defer close(frameChan)
+
 	for {
 		fr, err := frameParser(bufrw)
 		if err != nil {
 			log.Error().Err(err).Msg("couldn't parse frame")
 			return
 		}
-
-		log.Debug().Interface("frame", fr).Str("payload", fr.payload).Msg("Received payload from client")
-
+		// log.Debug().Interface("frame", fr).Str("payload", fr.payload).Msg("Received payload from client")
 		switch fr.opcode {
 		case OpcodePing:
 			frameChan <- frame{

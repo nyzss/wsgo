@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/rs/zerolog/log"
@@ -110,16 +111,12 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		var wg sync.WaitGroup
 		frameChan := make(chan frame)
 
-		go writeLoop(bufrw, frameChan)
-
-		frameChan <- frame{
-			payload: "hello world!",
-			opcode:  OpcodeText,
-		}
-
+		go writeLoop(bufrw, frameChan, &wg)
 		readLoop(bufrw, frameChan)
+		wg.Wait()
 
 	} else {
 		log.Warn().Msg("normal http request")
