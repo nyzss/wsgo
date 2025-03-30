@@ -6,29 +6,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-/*
- *  %x0 denotes a continuation frame
- *  %x1 denotes a text frame
- *  %x2 denotes a binary frame
- *  %x3-7 are reserved for further non-control frames
- *  %x8 denotes a connection close
- *  %x9 denotes a ping
- *  %xA denotes a pong
- *  %xB-F are reserved for further control frames
- */
-type Opcode byte
-
-const (
-	OpcodeContinuation    Opcode = 0
-	OpcodeText            Opcode = 1
-	OopcodeBinary         Opcode = 2
-	OpcodeConnectionClose Opcode = 8
-	OpcodePing            Opcode = 9
-	OpcodePong            Opcode = 10
-)
-
-type StatusCode uint16
-
 type frame struct {
 	fin          byte
 	opcode       Opcode

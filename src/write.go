@@ -34,9 +34,18 @@ func writeLoop(bufrw *bufio.ReadWriter, frameChan chan frame, wg *sync.WaitGroup
 			return
 		}
 
-		bufrw.Flush()
+		if err := bufrw.Flush(); err != nil {
+			log.Error().Err(err).Msg("couldn't flush buffered data to client")
+			return
+		}
+
 		if received.opcode == OpcodeConnectionClose {
 			return
 		}
 	}
 }
+
+// dbg to check for elapsed time in us
+// start := time.Now()
+// elapsed := time.Since(start)
+// log.Printf("flush took %s\n", elapsed)
