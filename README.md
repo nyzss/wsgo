@@ -4,6 +4,15 @@ golang webSocket server implementation created for learning purposes
 
 trying to follow [rfc-6455](https://datatracker.ietf.org/doc/html/rfc6455) a maximum
 
+## Build
+
+To build the program you have to run:
+
+```bash
+# this will output an binary file "wsgo"
+go build -o wsgo ./src
+```
+
 ## Testing
 
 ### Running the Autobahn Test Suite

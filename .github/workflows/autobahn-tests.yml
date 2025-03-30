@@ -25,10 +25,10 @@ jobs:
 
             - name: Start wsgo server
               run: |
-                  go build -o wsgo
+                  go build -o wsgo ./src
                   ./wsgo &
                   # Give the server time to start
-                  sleep 5
+                  sleep 3
 
             - name: Run Autobahn Test Suite
               run: bash ./autobahn.sh
