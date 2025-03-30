@@ -4,6 +4,8 @@ golang webSocket server implementation created for learning purposes
 
 trying to follow [rfc-6455](https://datatracker.ietf.org/doc/html/rfc6455) a maximum
 
+you can find the **autobahn-testsuite** results on [wsgo.drafted.dev](https://wsgo.drafted.dev)
+
 ## Build
 
 To build the program you have to run:
