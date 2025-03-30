@@ -16,8 +16,6 @@ import (
 
 var WEBSOCKET_MAGIC_GUID string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-var debug bool = true
-
 func cleanup() {
 	log.Info().Msg("cleaning up and exiting..")
 }
@@ -113,11 +111,11 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 		var wg sync.WaitGroup
 		frameChan := make(chan frame)
+		stopChan := make(chan struct{})
 
-		go writeLoop(bufrw, frameChan, &wg)
-		readLoop(bufrw, frameChan)
+		go writeLoop(bufrw, frameChan, stopChan, &wg)
+		readLoop(bufrw, frameChan, stopChan)
 		wg.Wait()
-
 	} else {
 		log.Warn().Msg("normal http request")
 		// todo: remove after testing hijacking

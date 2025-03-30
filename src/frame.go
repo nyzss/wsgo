@@ -140,7 +140,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 }
 
 // * rfc-6455 section 5.2 (https://datatracker.ietf.org/doc/html/rfc6455#section-5.2)
-func frameBuilder(fr frame) []byte {
+func frameBuilder(fr frame) ([]byte, bool) {
 	l := len(fr.payload)
 	var numBytes int
 	// payload len 125, 126 or 127
@@ -182,8 +182,8 @@ func frameBuilder(fr frame) []byte {
 	}
 
 	// adding status code before setting payload
-	if fr.opcode == OpcodeConnectionClose {
-		statusCode := fr.statusCode
+	close, statusCode := opcodeCheck(fr.opcode)
+	if close {
 		for i := 1; i >= 0; i-- {
 			buffer[hIndex+i] = byte(statusCode & 0xFF)
 			statusCode >>= 8
@@ -196,11 +196,12 @@ func frameBuilder(fr frame) []byte {
 		buffer[hIndex+i] = fr.payload[i]
 	}
 
-	return buffer
+	return buffer, close
 }
 
 // mostly for debugging, or when you know you have the whole header + payload
-func simpleFrameParser(buffer []byte) (frame, error) {
+// func simpleFrameParser(buffer []byte) (frame, error) {
+func _(buffer []byte) (frame, error) {
 	hIndex := 0                   // header index / header size
 	fin := buffer[hIndex] & 128   // 0x80
 	rsv := buffer[hIndex] & 112   // 0x70
