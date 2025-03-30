@@ -1,0 +1,85 @@
+name: Autobahn Test Suite
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+jobs:
+    test-and-deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v5
+              with:
+                  go-version: "1.24.1"
+
+            - name: Start wsgo server
+              run: |
+                  go build -o wsgo ./src
+                  ./wsgo &
+                  # Give the server time to start
+                  sleep 3
+
+            - name: Create CI-friendly config
+              run: |
+                  mkdir -p autobahn/config-ci
+                  cat << 'EOF' > autobahn/config-ci/fuzzingclient.json
+                  {
+                      "servers": [
+                          {
+                              "url": "ws://localhost:8080",
+                              "agent": "wsgo fuzzing client"
+                          }
+                      ],
+                      "outdir": "./reports/servers",
+                      "cases": ["*"],
+                      "exclude-cases": ["9.*", "12.*", "13.*"]
+                  }
+                  EOF
+
+            - name: Create CI-friendly autobahn script
+              run: |
+                  cat << 'EOF' > autobahn-ci.sh
+                  #!/bin/bash
+
+                  docker run --rm --network="host" \
+                    -v "${PWD}/autobahn/config-ci:/config" \
+                    -v "${PWD}/autobahn/reports:/reports" \
+                    crossbario/autobahn-testsuite \
+                    wstest -m fuzzingclient -s /config/fuzzingclient.json
+                  EOF
+                  chmod +x autobahn-ci.sh
+
+            - name: Run Autobahn Test Suite
+              run: bash ./autobahn-ci.sh
+
+            - name: Upload test results as artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: autobahn-test-reports
+                  path: autobahn/reports/servers/
+
+            - name: Setup Pages
+              if: github.ref == 'refs/heads/main'
+              uses: actions/configure-pages@v5
+
+            - name: Upload pages artifact
+              if: github.ref == 'refs/heads/main'
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: autobahn/reports/servers/
+
+            - name: Deploy to GitHub Pages
+              if: github.ref == 'refs/heads/main'
+              id: deployment
+              uses: actions/deploy-pages@v4
