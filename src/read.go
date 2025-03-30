@@ -28,7 +28,7 @@ func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame, stopChan chan struc
 					payload: fr.payload,
 					opcode:  OpcodeText,
 				}
-			case OpcodeText:
+			case OpcodeText, OpcodeBinary:
 				frameChan <- frame{
 					// payload: "received message well, this is a text from server",
 					payload: fr.payload,
