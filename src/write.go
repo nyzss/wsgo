@@ -12,7 +12,7 @@ func writeLoop(bufrw *bufio.ReadWriter, frameChan chan frame, stopChan chan stru
 	defer wg.Done()
 
 	for received := range frameChan {
-
+		log.Info().Int("connection_id", 1).Msg("received channel message on write loop")
 		data, shouldClose := frameBuilder(received)
 
 		n, err := bufrw.Write(data)

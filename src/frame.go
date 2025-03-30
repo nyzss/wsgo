@@ -9,7 +9,7 @@ import (
 type frame struct {
 	fin          byte
 	opcode       Opcode
-	payload      string
+	payload      []byte
 	statusCode   StatusCode
 	headerLength byte
 	// rsv     byte
@@ -133,7 +133,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	return frame{
 		fin:          fin,
 		opcode:       Opcode(opcode),
-		payload:      string(unmaskedPayload),
+		payload:      unmaskedPayload,
 		statusCode:   statusCode,
 		headerLength: byte(hIndex),
 	}, nil
@@ -278,7 +278,7 @@ func _(buffer []byte) (frame, error) {
 	return frame{
 		fin:          fin,
 		opcode:       Opcode(opcode),
-		payload:      string(unmaskedPayload),
+		payload:      unmaskedPayload,
 		statusCode:   statusCode,
 		headerLength: byte(hIndex),
 	}, nil

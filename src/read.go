@@ -15,6 +15,8 @@ func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame, stopChan chan struc
 			return
 		default:
 			fr, err := frameParser(bufrw)
+			log.Info().Int("connection_id", 1).Msg("received message on read loop")
+
 			if err != nil {
 				log.Error().Err(err).Msg("couldn't parse frame")
 				return
