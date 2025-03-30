@@ -182,7 +182,7 @@ func frameBuilder(fr frame) ([]byte, bool) {
 	}
 
 	// adding status code before setting payload
-	close, statusCode := opcodeCheck(fr.opcode)
+	close, statusCode := opcodeStatusCheck(fr.opcode, fr.statusCode)
 	if close {
 		for i := 1; i >= 0; i-- {
 			buffer[hIndex+i] = byte(statusCode & 0xFF)
