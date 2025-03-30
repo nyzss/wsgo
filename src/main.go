@@ -2,9 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha1"
 	b64 "encoding/base64"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,15 +52,31 @@ func upgradeConnection(bufrw *bufio.ReadWriter, clientKey string) error {
 
 	log.Debug().Str("encoded key", encoded).Msg("")
 
-	response := fmt.Sprintf(
-		"HTTP/1.1 101 Switching Protocols\r\n"+
-			"Upgrade: websocket\r\n"+
-			"Connection: Upgrade\r\n"+
-			"Sec-WebSocket-Accept: %s\r\n\r\n",
-		encoded,
-	)
+	// Header: http.Header{
+	// 	"Upgrade":              {"websocket"},
+	// 	"Connection":           {"upgrade"},
+	// 	"Sec-WebSocket-Accept": {encoded},
+	// },
 
-	_, err := bufrw.WriteString(response)
+	// keeping the headers with Add() instead of inline so that we can extend it later on with user headers
+	headers := make(http.Header, 3)
+	headers.Add("Upgrade", "websocket")
+	headers.Add("Connection", "Upgrade")
+	headers.Add("Sec-WebSocket-Accept", encoded)
+
+	response := http.Response{
+		Status:     "101 Switching Protocols",
+		Proto:      "HTTP/1.1",
+		Header:     headers,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		StatusCode: 101,
+	}
+
+	buffer := bytes.NewBuffer(nil)
+	response.Write(buffer)
+
+	_, err := bufrw.Write(buffer.Bytes())
 	if err != nil {
 		return err
 	}
