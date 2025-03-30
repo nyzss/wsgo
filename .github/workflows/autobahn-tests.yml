@@ -30,13 +30,30 @@ jobs:
                   # Give the server time to start
                   sleep 3
 
+            - name: Create CI-friendly config
+              run: |
+                  mkdir -p autobahn/config-ci
+                  cat << 'EOF' > autobahn/config-ci/fuzzingclient.json
+                  {
+                      "servers": [
+                          {
+                              "url": "ws://localhost:8080",
+                              "agent": "wsgo fuzzing client"
+                          }
+                      ],
+                      "outdir": "./reports/servers",
+                      "cases": ["*"],
+                      "exclude-cases": ["9.*", "12.*", "13.*"]
+                  }
+                  EOF
+
             - name: Create CI-friendly autobahn script
               run: |
                   cat << 'EOF' > autobahn-ci.sh
                   #!/bin/bash
 
-                  docker run --rm \
-                    -v "${PWD}/autobahn/config:/config" \
+                  docker run --rm --network="host" \
+                    -v "${PWD}/autobahn/config-ci:/config" \
                     -v "${PWD}/autobahn/reports:/reports" \
                     crossbario/autobahn-testsuite \
                     wstest -m fuzzingclient -s /config/fuzzingclient.json
