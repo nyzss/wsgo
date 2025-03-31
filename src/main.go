@@ -40,7 +40,7 @@ func main() {
 	log.Info().Str("port", port).Msg("Serving on localhost")
 	err := http.ListenAndServe(port, nil)
 	if err != nil {
-		log.Fatal().Str("port", port).Msg("couldn't listen and serve, current port")
+		log.Fatal().Err(err).Str("port", port).Msg("couldn't listen and serve, current port")
 	}
 }
 
@@ -108,6 +108,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 		conn, bufrw, err := hj.Hijack()
 		if err != nil {
+			log.Error().Err(err).Msg("couldn't hijack underlying tcp connection")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

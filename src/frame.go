@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 )
@@ -32,7 +33,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	chunk, bytesRead, err := readChunk(bufrw, readSize)
 
 	if err != nil {
-		log.Error().Msg("initial read failed")
+		log.Error().Err(err).Msg("initial read failed")
 		return frame{}, err
 	}
 
@@ -151,7 +152,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 					Msg("Increasing read buffer size")
 				chunk, bytesRead, err = readChunk(bufrw, readSize)
 				if err != nil {
-					log.Error().Msg("loop read failed")
+					log.Error().Err(err).Msg("loop read failed")
 					return frame{}, err
 				}
 				j = 0
@@ -163,6 +164,10 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	}
 	if len(unmaskedPayload) != int(payloadLen) {
 		return frame{}, errors.New("invalid number of bytes received in frame")
+	}
+
+	if opcode == byte(OpcodeText) && !utf8.Valid(unmaskedPayload) {
+		return frame{}, errors.New("invalid utf8 payload in with text opcode")
 	}
 
 	return frame{

@@ -5,15 +5,13 @@ package main
 func opcodeStatusCheck(opcode Opcode, status StatusCode) (bool, StatusCode) {
 	if opcode == OpcodeConnectionClose {
 		if status <= 999 ||
+			status == 1002 ||
 			status == 1004 ||
 			status == 1005 ||
 			status == 1006 ||
 			(status >= 1016 && status < 3000) {
 			return true, StatusProtocolError
 		}
-		// else if status == StatusProtocolError {
-		// 	return true, StatusProtocolError
-		// }
 
 		return true, status
 		// return true, StatusNormalClosure
