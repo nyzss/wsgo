@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 
 	"github.com/rs/zerolog/log"
 )
@@ -15,45 +16,70 @@ type frame struct {
 	// rsv     byte
 }
 
-func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, err error) {
+func readChunk(bufrw *bufio.ReadWriter, n int) (chunk []byte, bytesRead int, err error) {
 	frame := make([]byte, n)
 	b, err := bufrw.Read(frame)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	frame = frame[:b]
-	return frame, nil
+	return frame, b, nil
 }
 
 // ? parsing frame according to RFC 6455 section 5.2
 func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 	readSize := 4096           // default reading and buffer size
 	maxReadSize := 1024 * 1024 // max readsize
-	chunk, err := readChunk(bufrw, readSize)
+	chunk, bytesRead, err := readChunk(bufrw, readSize)
 
 	if err != nil {
 		log.Error().Msg("initial read failed")
 		return frame{}, err
 	}
 
+	if bytesRead < 2 {
+		return frame{}, errors.New("invalid number of bytes received in frame")
+	}
+
+	// first byte
 	hIndex := 0                  // header index / header size
 	fin := chunk[hIndex] & 128   // 0x80
 	rsv := chunk[hIndex] & 112   // 0x70
 	opcode := chunk[hIndex] & 15 // 0x0F
 
+	// second byte
 	hIndex++
 	masked := chunk[hIndex] & 128
+
+	if masked == 0 {
+		return frame{}, errors.New("payload should be masked")
+	}
 
 	var payloadLen int64
 
 	payloadLenBase := chunk[hIndex] & 127
+	//third byte
 	hIndex++
+
+	if bytesRead < hIndex {
+		return frame{}, errors.New("invalid number of bytes received in frame")
+	}
+
 	if payloadLenBase <= 125 {
 		payloadLen = int64(payloadLenBase)
 	} else if payloadLenBase == 126 {
+		if bytesRead < hIndex+2 {
+			return frame{}, errors.New("invalid number of bytes received in frame")
+		}
 		payloadLen = int64((int(chunk[hIndex]) << 8) | int(chunk[hIndex+1]))
 		hIndex += 2
 	} else if payloadLenBase == 127 {
+		// ? recheck this, we might want to improve this ifelse statement part
+		// * just check for the payloadLen in a single else if/else
+		// * and do the logic after, it might be less repeating code
+		if bytesRead < hIndex+8 {
+			return frame{}, errors.New("invalid number of bytes received in frame")
+		}
+
 		for i := range 8 {
 			payloadLen = (payloadLen << 8) | int64(chunk[hIndex+i])
 		}
@@ -69,25 +95,31 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 		Int64("payload_length", payloadLen).
 		Msg("Frame header parsed")
 
+	if bytesRead < hIndex+4 {
+		return frame{}, errors.New("invalid number of bytes received in frame")
+	}
+
 	var maskingKey [4]byte
 
-	// TODO: if masked is 0 then we should return an error (rfc 6455 section 5.1)
-	if masked != 0 {
-		for i := range 4 {
-			maskingKey[i] = chunk[hIndex+i]
-		}
-		hIndex += 4
-		log.Debug().
-			Hex("masking_key", maskingKey[:]).
-			Int("header_size", hIndex).
-			Msg("Masking key parsed")
+	for i := range 4 {
+		maskingKey[i] = chunk[hIndex+i]
 	}
+
+	hIndex += 4
+	log.Debug().
+		Hex("masking_key", maskingKey[:]).
+		Int("header_size", hIndex).
+		Msg("Masking key parsed")
 
 	// * UNMASKING CLIENT PAYLOAD HERE
 
 	var statusCode StatusCode
 
 	if opcode == byte(OpcodeConnectionClose) && len(chunk) >= hIndex+2 {
+		if bytesRead < hIndex+2 {
+			return frame{}, errors.New("invalid number of bytes received in frame")
+		}
+
 		for i := range 2 {
 			statusCode = (StatusCode(statusCode) << 8) | StatusCode(chunk[hIndex+i]^maskingKey[i%4])
 		}
@@ -108,7 +140,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 			// condition added in case we are at an index bigger than frame buffer (>= readSize in this case)
 			// doubling size of frame each time to do less read() calls on the socket
 			// (might want to check which is better, more read() calls or smaller buffer size)
-			if len(chunk) <= h+j {
+			if bytesRead <= h+j {
 				if readSize <= maxReadSize { // continue expending readsize until we hit the 1mb
 					readSize *= 2
 				}
@@ -117,7 +149,7 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 					Int("new_size", readSize).
 					Int("max_size", maxReadSize).
 					Msg("Increasing read buffer size")
-				chunk, err = readChunk(bufrw, readSize)
+				chunk, bytesRead, err = readChunk(bufrw, readSize)
 				if err != nil {
 					log.Error().Msg("loop read failed")
 					return frame{}, err
@@ -128,6 +160,9 @@ func frameParser(bufrw *bufio.ReadWriter) (frame, error) {
 			unmaskedPayload[i] = chunk[h+int(j)] ^ maskingKey[i%4]
 			j++
 		}
+	}
+	if len(unmaskedPayload) != int(payloadLen) {
+		return frame{}, errors.New("invalid number of bytes received in frame")
 	}
 
 	return frame{

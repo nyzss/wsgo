@@ -19,6 +19,11 @@ func readLoop(bufrw *bufio.ReadWriter, frameChan chan frame, stopChan chan struc
 
 			if err != nil {
 				log.Error().Err(err).Msg("couldn't parse frame")
+				frameChan <- frame{
+					payload:    fr.payload,
+					opcode:     OpcodeConnectionClose,
+					statusCode: StatusProtocolError,
+				}
 				return
 			}
 			// log.Debug().Interface("frame", fr).Str("payload", fr.payload).Msg("Received payload from client")

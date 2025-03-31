@@ -11,8 +11,12 @@ func opcodeStatusCheck(opcode Opcode, status StatusCode) (bool, StatusCode) {
 			(status >= 1016 && status < 3000) {
 			return true, StatusProtocolError
 		}
+		// else if status == StatusProtocolError {
+		// 	return true, StatusProtocolError
+		// }
 
-		return true, StatusNormalClosure
+		return true, status
+		// return true, StatusNormalClosure
 	} else if (opcode >= 0x3 && opcode <= 0x7) || opcode >= 0xB {
 		// * %x3-7 are reserved for further non-control frames
 		// * %xB-F are reserved for further control frames
